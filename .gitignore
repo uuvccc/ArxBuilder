@@ -1,0 +1,46 @@
+## Build output
+bin/
+obj/
+out/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.cache
+*.vsidx
+*.sln.docstates
+
+## Rider
+.idea/
+
+## User-specific
+*.userosscache
+*.sln.docstates.suo
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+
+## NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+## Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+## ARX build artifacts
+build_arx_*/
