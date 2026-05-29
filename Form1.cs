@@ -1,6 +1,11 @@
+using System;
 using System.Diagnostics;
+using System.Drawing;
+using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace ArxBuilder;
 
@@ -41,7 +46,8 @@ public partial class Form1 : Form
         }
         catch { }
 
-        txtSdkPath.Text = @"C:\Autodesk\Autodesk_ObjectARX_2019_Win_64_and_32_Bit";
+        var detected = FindSdkPath();
+        txtSdkPath.Text = detected ?? "";
     }
 
     private void SaveSettings()
@@ -64,9 +70,38 @@ public partial class Form1 : Form
         public string? SdkPath { get; set; }
     }
 
-    #endregion
+    private static string? FindSdkPath()
+    {
+        // 1. Check environment variable
+        var envSdk = Environment.GetEnvironmentVariable("ARX_SDK_ROOT");
+        if (!string.IsNullOrEmpty(envSdk) && Directory.Exists(envSdk)
+            && Directory.Exists(Path.Combine(envSdk, "inc")))
+            return envSdk;
 
-    #region Build Tool Detection
+        // 2. Search common Autodesk install locations
+        var searchRoots = new[] { @"C:\Autodesk", @"D:\Autodesk" };
+        foreach (var root in searchRoots)
+        {
+            if (!Directory.Exists(root)) continue;
+            try
+            {
+                var dirs = Directory.GetDirectories(root, "*ObjectARX*");
+                // Sort descending to prefer newer versions
+                Array.Sort(dirs);
+                Array.Reverse(dirs);
+                foreach (var dir in dirs)
+                {
+                    if (Directory.Exists(Path.Combine(dir, "inc")))
+                        return dir;
+                }
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
+    #endregion
 
     private void DetectBuildTools()
     {
@@ -124,7 +159,7 @@ public partial class Form1 : Form
                 {
                     var output = proc.StandardOutput.ReadToEnd();
                     proc.WaitForExit();
-                    var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    var lines = output.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
                     if (lines.Length > 0 && File.Exists(lines[0].Trim()))
                         return lines[0].Trim();
                 }
@@ -189,52 +224,14 @@ public partial class Form1 : Form
         return null;
     }
 
-    private string? DetectVSGenerator()
-    {
-        var vswhere = @"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe";
-        if (!File.Exists(vswhere)) return null;
-
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = vswhere,
-                Arguments = "-latest -property installationVersion",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                CreateNoWindow = true
-            };
-            using var proc = Process.Start(psi);
-            if (proc != null)
-            {
-                var output = proc.StandardOutput.ReadToEnd().Trim();
-                proc.WaitForExit();
-                if (!string.IsNullOrEmpty(output) && output.Contains('.'))
-                {
-                    var majorStr = output.Split('.')[0];
-                    if (int.TryParse(majorStr, out var major))
-                    {
-                        return major switch
-                        {
-                            16 => "Visual Studio 16 2019",
-                            17 => "Visual Studio 17 2022",
-                            _ => null
-                        };
-                    }
-                }
-            }
-        }
-        catch { }
-
-        return null;
-    }
+    #region Build Tool Detection
 
     private static string? SearchInPath(string exeName)
     {
         var pathEnv = Environment.GetEnvironmentVariable("PATH");
         if (pathEnv == null) return null;
 
-        foreach (var dir in pathEnv.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var dir in pathEnv.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
         {
             try
             {
@@ -275,6 +272,80 @@ public partial class Form1 : Form
     }
 
     #endregion
+
+    private string? DetectVSGenerator()
+    {
+        var vswhere = @"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe";
+        if (!File.Exists(vswhere)) return null;
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = vswhere,
+                Arguments = "-latest -property installationVersion",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true
+            };
+            using var proc = Process.Start(psi);
+            if (proc != null)
+            {
+                var output = proc.StandardOutput.ReadToEnd().Trim();
+                proc.WaitForExit();
+                if (!string.IsNullOrEmpty(output) && output.Contains("."))
+                {
+                    var majorStr = output.Split('.')[0];
+                    if (int.TryParse(majorStr, out var major))
+                    {
+                        // Dynamically match from cmake's available generators
+                        var cmakeMatch = MatchCMakeGenerator(major);
+                        if (cmakeMatch != null) return cmakeMatch;
+                    }
+                }
+            }
+        }
+        catch { }
+
+        return null;
+    }
+
+    private string? MatchCMakeGenerator(int vsMajor)
+    {
+        if (_cmakePath == null) return null;
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = _cmakePath,
+                Arguments = "--help",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true
+            };
+            using var proc = Process.Start(psi);
+            if (proc == null) return null;
+
+            var output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit();
+
+            // Parse cmake generators list — look for "Visual Studio XX YYYY" matching our VS major version
+            foreach (var line in output.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.StartsWith("Visual Studio") && trimmed.Contains($" {vsMajor} "))
+                {
+                    var eqIdx = trimmed.IndexOf('=');
+                    var genName = (eqIdx >= 0 ? trimmed.Substring(0, eqIdx) : trimmed).Trim();
+                    return genName;
+                }
+            }
+        }
+        catch { }
+
+        return null;
+    }
 
     #region UI Event Handlers
 
@@ -389,14 +460,16 @@ public partial class Form1 : Form
 
             var cmakeContent = GenerateCMakeLists(cppName, Path.GetFileName(cppFile), sdkPath, arxVersion);
             var cmakeFilePath = Path.Combine(buildDir, "CMakeLists.txt");
-            await File.WriteAllTextAsync(cmakeFilePath, cmakeContent);
+            File.WriteAllText(cmakeFilePath, cmakeContent);
             Log($"  CMakeLists.txt: {cmakeFilePath}");
 
             // Step 3: Run CMake
             Log("[3/6] Running CMake...");
-            var generator = _vsGenerator ?? "Visual Studio 17 2022";
+            var generator = _vsGenerator;
             var cmakeBuildDir = Path.Combine(buildDir, "build");
-            var cmakeArgs = $"-G \"{generator}\" -A x64 -S \"{buildDir}\" -B \"{cmakeBuildDir}\"";
+            var cmakeArgs = generator != null
+                ? $"-G \"{generator}\" -A x64 -S \"{buildDir}\" -B \"{cmakeBuildDir}\""
+                : $"-S \"{buildDir}\" -B \"{cmakeBuildDir}\"";
             Log($"  cmake {cmakeArgs}");
 
             var cmakeExit = await RunProcessAsync(_cmakePath, cmakeArgs, buildDir);
@@ -450,7 +523,7 @@ public partial class Form1 : Form
             Log("[6/6] Build completed successfully!");
             Log($"  .arx file: {dstArx}");
             Log(new string('=', 60));
-            Log("  Load this .arx in AutoCAD 2019 with the APPLOAD command.");
+            Log("  Load this .arx in AutoCAD with the APPLOAD command.");
             Log(new string('=', 60));
 
             MessageBox.Show($"Build successful!\n\nOutput: {dstArx}", "Success",
@@ -511,7 +584,7 @@ public partial class Form1 : Form
         var libDir = hasLibX64 ? "${ARX_SDK_ROOT}/lib-x64" : "${ARX_SDK_ROOT}/lib/x64";
 
         var sb = new StringBuilder();
-        sb.AppendLine("cmake_minimum_required(VERSION 3.15)");
+        sb.AppendLine("cmake_minimum_required(VERSION 3.1)");
         sb.AppendLine($"project({projectName})");
         sb.AppendLine();
         sb.AppendLine("set(CMAKE_CXX_STANDARD 14)");

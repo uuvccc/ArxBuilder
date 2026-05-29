@@ -1,3 +1,7 @@
+using System;
+using System.Drawing;
+using System.Windows.Forms;
+
 namespace ArxBuilder;
 
 partial class Form1
@@ -49,7 +53,7 @@ partial class Form1
         ClientSize = new Size(720, 560);
         MinimumSize = new Size(600, 450);
         StartPosition = FormStartPosition.CenterScreen;
-        Text = "ObjectARX 2019 Builder";
+        Text = "ObjectARX Builder";
         BackColor = Color.White;
         FormClosing += (s, e) => SaveSettings();
 
@@ -58,7 +62,7 @@ partial class Form1
         lblTitle.Font = new Font("Segoe UI Semibold", 14.25F, FontStyle.Bold);
         lblTitle.ForeColor = Color.FromArgb(0, 80, 160);
         lblTitle.Location = new Point(20, 16);
-        lblTitle.Text = "ObjectARX 2019 \u2014 One-Click Builder";
+        lblTitle.Text = "ObjectARX \u2014 One-Click Builder";
 
         // === Cpp Path ===
         lblCppPath.AutoSize = true;
@@ -70,7 +74,7 @@ partial class Form1
         txtCppPath.Location = new Point(22, 74);
         txtCppPath.Size = new Size(590, 23);
         txtCppPath.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        txtCppPath.PlaceholderText = "Click Browse... to select a .cpp file";
+
 
         btnBrowseCpp.Font = new Font("Segoe UI", 9F);
         btnBrowseCpp.Location = new Point(620, 72);
@@ -90,7 +94,8 @@ partial class Form1
         txtSdkPath.Location = new Point(22, 128);
         txtSdkPath.Size = new Size(590, 23);
         txtSdkPath.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        txtSdkPath.Text = @"C:\Autodesk\Autodesk_ObjectARX_2019_Win_64_and_32_Bit";
+        txtSdkPath.Text = "";
+
 
         btnBrowseSdk.Font = new Font("Segoe UI", 9F);
         btnBrowseSdk.Location = new Point(620, 126);
