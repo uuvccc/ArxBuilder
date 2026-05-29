@@ -1,0 +1,107 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Publish
+      run: dotnet publish --configuration Release --no-build --output ./publish
+
+    - name: Extract version from csproj
+      id: version
+      shell: pwsh
+      run: |
+        $csproj = Get-Content ArxBuilder.csproj -Raw
+        if ($csproj -match '<Version>\s*([^<]+)\s*</Version>') {
+          $version = $matches[1].Trim()
+        } else {
+          $version = "0.0.0"
+        }
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+
+    - name: Zip artifact
+      shell: pwsh
+      run: |
+        $version = "${{ steps.version.outputs.version }}"
+        $zipName = "ArxBuilder-v$version-win-x64.zip"
+        Compress-Archive -Path ./publish/* -DestinationPath $zipName
+        echo "zipName=$zipName" >> $env:GITHUB_OUTPUT
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ArxBuilder-win-x64
+        path: ./*.zip
+        if-no-files-found: error
+
+  release-continuous:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ArxBuilder-win-x64
+        path: ./artifacts
+
+    - name: Delete old continuous release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release delete continuous --yes --cleanup-tag || true
+
+    - name: Create continuous release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: continuous
+        name: "Continuous Build"
+        body: |
+          Latest build from `${{ github.ref_name }}` (${{ github.sha }})
+          
+          > This release is automatically updated on every push.
+        files: ./artifacts/*
+        prerelease: true
+
+  release-tagged:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ArxBuilder-win-x64
+        path: ./artifacts
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        generate_release_notes: true
+        files: ./artifacts/*
